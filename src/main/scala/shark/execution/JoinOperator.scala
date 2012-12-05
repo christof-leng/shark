@@ -15,6 +15,7 @@ import scala.reflect.BeanProperty
 
 import spark.{CoGroupedRDD, HashPartitioner, RDD}
 import spark.SparkContext._
+import spark.JoinRDD
 
 
 class JoinOperator extends CommonJoinOperator[JoinDesc, HiveJoinOperator]
@@ -85,42 +86,14 @@ class JoinOperator extends CommonJoinOperator[JoinDesc, HiveJoinOperator]
     }
 
     val part = new HashPartitioner(numReduceTasks)
-    val cogrouped = new CoGroupedRDD[ReduceKey](
-      rddsInJoinOrder.toSeq.asInstanceOf[Seq[RDD[(_, _)]]], part)
-
     val op = OperatorSerializationWrapper(this)
-
-    cogrouped.mapPartitions { part =>
-      op.initializeOnSlave()
-
-      val tmp = new Array[Object](2)
-      val writable = new BytesWritable
-      val nullSafes = op.conf.getNullSafes()
-
-      val cp = new CartesianProduct[Any](op.numTables)
-
-      part.flatMap { case (k: ReduceKey, bufs: Array[_]) =>
-        writable.set(k.bytes)
-
-        // If nullCheck is false, we can skip deserializing the key.
-        if (op.nullCheck &&
-            SerDeUtils.hasAnyNullObject(
-              op.keyDeserializer.deserialize(writable).asInstanceOf[JList[_]],
-              op.keyObjectInspector,
-              nullSafes)) {
-          bufs.zipWithIndex.flatMap { case (buf, label) =>
-            val bufsNull = Array.fill(op.numTables)(ArrayBuffer[Any]())
-            bufsNull(label) = buf
-            op.generateTuples(cp.product(bufsNull.asInstanceOf[Array[Seq[Any]]], op.joinConditions))
-          }
-        } else {
-          op.generateTuples(cp.product(bufs.asInstanceOf[Array[Seq[Any]]], op.joinConditions))
-        }
-      }
-    }
+    val joinRDD = new JoinRDD(
+      rddsInJoinOrder.toSeq.asInstanceOf[Seq[RDD[(_, _)]]], part, op)
+    
+    joinRDD
   }
 
-  def generateTuples(iter: Iterator[Array[Any]]): Iterator[_] = {
+  def generateTuples(iter: Iterator[Array[Any]]): Iterator[Array[Object]] = {
     val tupleOrder = CommonJoinOperator.computeTupleOrder(joinConditions)
 
     val bytes = new BytesWritable()
