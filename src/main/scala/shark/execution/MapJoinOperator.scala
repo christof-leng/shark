@@ -246,7 +246,7 @@ class MapJoinOperator extends CommonJoinOperator[MapJoinDesc, HiveMapJoinOperato
     val bufs = new Array[Seq[Array[Object]]](numTables)
     val nullSafes = conf.getNullSafes()
 
-    val cp = new CartesianProduct[Array[Object]](numTables)
+    val cp = CartesianProduct[Array[Object]](joinConditions, numTables)
 
     val jointRows: Iterator[Array[Array[Object]]] = iter.flatMap { row =>
       // Build the join key and value for the row in the large table.
@@ -265,7 +265,7 @@ class MapJoinOperator extends CommonJoinOperator[MapJoinDesc, HiveMapJoinOperato
       if (nullCheck && key.hasAnyNulls(nullSafes)) {
         val bufsNull = Array.fill[Seq[Array[Object]]](numTables)(Seq())
         bufsNull(bigTableAlias) = Seq(value)
-        cp.product(bufsNull.asInstanceOf[Array[Seq[Array[Object]]]], joinConditions)
+        cp.product(bufsNull.asInstanceOf[Array[Seq[Array[Object]]]])
       } else {
         // Build the join bufs.
         var i = 0
@@ -280,7 +280,7 @@ class MapJoinOperator extends CommonJoinOperator[MapJoinDesc, HiveMapJoinOperato
           }
           i += 1
         }
-        cp.product(bufs.asInstanceOf[Array[Seq[Array[Object]]]], joinConditions)
+        cp.product(bufs.asInstanceOf[Array[Seq[Array[Object]]]])
       }
     }
 

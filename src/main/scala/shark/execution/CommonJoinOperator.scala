@@ -75,8 +75,7 @@ abstract class CommonJoinOperator[JOINDESCTYPE <: JoinDesc, T <: HiveCommonJoinO
   }
 }
 
-
-class CartesianProduct[T >: Null : ClassManifest](val numTables: Int) {
+abstract class CartesianProduct[T >: Null : ClassManifest] (numTables: Int) {
 
   val SINGLE_NULL_LIST = Seq[T](null)
   val EMPTY_LIST = Seq[T]()
@@ -86,7 +85,42 @@ class CartesianProduct[T >: Null : ClassManifest](val numTables: Int) {
   // they are just streaming through the output.
   val outputBuffer = new Array[T](numTables)
 
-  def product(bufs: Array[Seq[T]], joinConditions: Array[JoinCondDesc]): Iterator[Array[T]] = {
+  def product(bufs: Array[Seq[T]]): Iterator[Array[T]]
+  
+  def product2(left: Iterator[Array[T]], right: Seq[T], pos: Int): Iterator[Array[T]] = {
+    for (l <- left; r <- right.iterator) yield {
+      outputBuffer(pos) = r
+      outputBuffer
+    }
+  }
+
+  def createBase(left: Seq[T], pos: Int): Iterator[Array[T]] = {
+    var i = 0
+    while (i <= pos) {
+      outputBuffer(i) = null
+      i += 1
+    }
+    left.iterator.map { l =>
+      outputBuffer(pos) = l
+      outputBuffer
+    }
+  }
+}
+
+object CartesianProduct {
+  def apply[T >: Null : ClassManifest](joinConditions: Array[JoinCondDesc], numTables: Int) = {
+    if(joinConditions.length == 1 && joinConditions(0).getType == CommonJoinOperator.INNER_JOIN) {
+      new BinaryInnerJoin[T](joinConditions(0), numTables)
+    } else {
+      new GeneralCartesianProduct[T](joinConditions, numTables)
+    }
+  }
+}
+
+class GeneralCartesianProduct[T >: Null : ClassManifest](val joinConditions: Array[JoinCondDesc], 
+  numTables: Int) extends CartesianProduct[T](numTables) {
+  
+  def product(bufs: Array[Seq[T]]): Iterator[Array[T]] = {
 
     // This can be done with a foldLeft, but it will be too confusing if we
     // need to zip the bufs with a list of join descriptors...
@@ -146,26 +180,20 @@ class CartesianProduct[T >: Null : ClassManifest](val numTables: Int) {
     partial
   }
 
-  def product2(left: Iterator[Array[T]], right: Seq[T], pos: Int): Iterator[Array[T]] = {
-    for (l <- left; r <- right.iterator) yield {
-      outputBuffer(pos) = r
-      outputBuffer
-    }
-  }
+}
 
-  def createBase(left: Seq[T], pos: Int): Iterator[Array[T]] = {
-    var i = 0
-    while (i <= pos) {
-      outputBuffer(i) = null
-      i += 1
-    }
-    left.iterator.map { l =>
-      outputBuffer(pos) = l
-      outputBuffer
+class BinaryInnerJoin[T >: Null : ClassManifest](joinCondition: JoinCondDesc, numTables: Int) extends CartesianProduct[T](numTables) {
+  val left = joinCondition.getLeft
+  val right = joinCondition.getRight
+
+  def product(bufs: Array[Seq[T]]): Iterator[Array[T]] = {
+    if (bufs(left).size == 0 || bufs(right).size == 0) {
+      createBase(EMPTY_LIST, 1)
+    } else {
+      product2(createBase(bufs(left), 0), bufs(right), 1)
     }
   }
 }
-
 
 object CommonJoinOperator {
 

@@ -124,7 +124,7 @@ class JoinRDD(@transient rdds: Seq[RDD[(_, _)]], part: Partitioner,
     val writable = new BytesWritable
     val nullSafes = op.conf.getNullSafes()
 
-    val cp = new CartesianProduct[Any](op.numTables)
+    val cp = CartesianProduct[Any](op.joinConditions, op.numTables)
 
     bigTable.flatMap { case (k: ReduceKey, v: Array[Byte]) =>
       writable.set(k.bytes, 0, k.bytes.length)
@@ -142,10 +142,10 @@ class JoinRDD(@transient rdds: Seq[RDD[(_, _)]], part: Partitioner,
         bufs.zipWithIndex.flatMap { case (buf, label) =>
           val bufsNull = Array.fill(op.numTables)(ArrayBuffer[Any]())
           bufsNull(label) = buf
-          op.generateTuples(cp.product(bufsNull.asInstanceOf[Array[Seq[Any]]], op.joinConditions))
+          op.generateTuples(cp.product(bufsNull.asInstanceOf[Array[Seq[Any]]]))
         }
       } else {
-        op.generateTuples(cp.product(bufs.asInstanceOf[Array[Seq[Any]]], op.joinConditions))
+        op.generateTuples(cp.product(bufs.asInstanceOf[Array[Seq[Any]]]))
       }
     }
   }
