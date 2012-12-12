@@ -106,29 +106,7 @@ abstract class CartesianProduct[T >: Null : ClassManifest] (numTables: Int) {
     }
   }
 
-  def productBinOld(left: Seq[T], right: Seq[T]): Iterator[Array[T]] = {
-    var l = 0
-    var r = 0
-    outputBuffer(0) = left(0)
-
-    new Iterator[Array[T]] {
-      def hasNext = l < left.size    
-      def next = {
-        if(r < right.size) {
-          outputBuffer(1) = right(r)
-          r += 1
-        } else {
-          r = 0
-          outputBuffer(0) = left(l)
-          outputBuffer(1) = right(r)
-          l += 1
-        }
-        outputBuffer
-      }
-    }
-  }
-
-  def productBin(left: Seq[T], right: Seq[T]): Iterator[Array[T]] = {
+  def productBinLeft(left: Seq[T], right: Seq[T]): Iterator[Array[T]] = {
     var r = 0
     outputBuffer(0) = left(0)
 
@@ -137,6 +115,20 @@ abstract class CartesianProduct[T >: Null : ClassManifest] (numTables: Int) {
       def next = {
         outputBuffer(1) = right(r)
         r += 1
+        outputBuffer
+      }
+    }
+  }
+
+  def productBin(left: Seq[T], right: Seq[T]): Iterator[Array[T]] = {
+    var l = 0
+    outputBuffer(1) = right(0)
+
+    new Iterator[Array[T]] {
+      def hasNext = l < left.size    
+      def next = {
+        outputBuffer(0) = left(l)
+        l += 1
         outputBuffer
       }
     }
