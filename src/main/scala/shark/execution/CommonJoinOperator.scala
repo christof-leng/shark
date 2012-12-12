@@ -105,12 +105,45 @@ abstract class CartesianProduct[T >: Null : ClassManifest] (numTables: Int) {
       outputBuffer
     }
   }
+
+  def productBin(left: Seq[T], right: Seq[T]): Iterator[Array[T]] = {
+    var l = 0
+    var r = 0
+    outputBuffer(0) = left(0)
+
+    new Iterator[Array[T]] {
+      def hasNext = l < left.size    
+      def next = {
+        if(r < right.size) {
+          outputBuffer(1) = right(r)
+          r += 1
+        } else {
+          r = 0
+          outputBuffer(0) = left(l)
+          outputBuffer(1) = right(r)
+          l += 1
+        }
+        outputBuffer
+      }
+    }
+  }
 }
 
 object CartesianProduct {
   def apply[T >: Null : ClassManifest](joinConditions: Array[JoinCondDesc], numTables: Int) = {
-    if(joinConditions.length == 1 && joinConditions(0).getType == CommonJoinOperator.INNER_JOIN) {
-      new BinaryInnerJoin[T](joinConditions(0), numTables)
+    if(joinConditions.length == 1) {
+      joinConditions(0).getType() match {
+        case CommonJoinOperator.INNER_JOIN =>
+          new BinaryInnerJoin[T](joinConditions(0), numTables)
+        case CommonJoinOperator.FULL_OUTER_JOIN =>
+          new BinaryFullOuterJoin[T](joinConditions(0), numTables)
+        case CommonJoinOperator.LEFT_OUTER_JOIN =>
+          new BinaryLeftOuterJoin[T](joinConditions(0), numTables)
+        case CommonJoinOperator.RIGHT_OUTER_JOIN =>
+          new BinaryRightOuterJoin[T](joinConditions(0), numTables)
+        case CommonJoinOperator.LEFT_SEMI_JOIN =>
+          new BinaryLeftSemiJoin[T](joinConditions(0), numTables)
+      }
     } else {
       new GeneralCartesianProduct[T](joinConditions, numTables)
     }
@@ -179,18 +212,73 @@ class GeneralCartesianProduct[T >: Null : ClassManifest](val joinConditions: Arr
     }
     partial
   }
-
 }
 
 class BinaryInnerJoin[T >: Null : ClassManifest](joinCondition: JoinCondDesc, numTables: Int) extends CartesianProduct[T](numTables) {
   val left = joinCondition.getLeft
   val right = joinCondition.getRight
 
+  def product(bufs: Array[Seq[T]]): Iterator[Array[T]] = productBin(bufs(left), bufs(right))
+}
+
+class BinaryFullOuterJoin[T >: Null : ClassManifest](joinCondition: JoinCondDesc, numTables: Int) extends CartesianProduct[T](numTables) {
+  val left = joinCondition.getLeft
+  val right = joinCondition.getRight
+
   def product(bufs: Array[Seq[T]]): Iterator[Array[T]] = {
-    if (bufs(left).size == 0 || bufs(right).size == 0) {
-      createBase(EMPTY_LIST, 1)
+    if (bufs(left).size == 0) {
+      // If both right/left are empty, then the right side returns an empty
+      // iterator and product2 also returns an empty iterator.
+      productBin(SINGLE_NULL_LIST, bufs(right))
+    } else if (bufs(right).size == 0) {
+      productBin(bufs(left), SINGLE_NULL_LIST)
     } else {
-      product2(createBase(bufs(left), 0), bufs(right), 1)
+      productBin(bufs(left), bufs(right))
+    }
+  }
+}
+          
+class BinaryLeftOuterJoin[T >: Null : ClassManifest](joinCondition: JoinCondDesc, numTables: Int) extends CartesianProduct[T](numTables) {
+  val left = joinCondition.getLeft
+  val right = joinCondition.getRight
+
+  def product(bufs: Array[Seq[T]]): Iterator[Array[T]] = {
+    if (bufs(left).size == 0) {
+      Seq[Array[T]]().iterator
+    } else if (bufs(right).size == 0) {
+      productBin(bufs(left), SINGLE_NULL_LIST)
+    } else {
+      productBin(bufs(left), bufs(right))
+    }
+  }
+}
+          
+class BinaryRightOuterJoin[T >: Null : ClassManifest](joinCondition: JoinCondDesc, numTables: Int) extends CartesianProduct[T](numTables) {
+  val left = joinCondition.getLeft
+  val right = joinCondition.getRight
+
+  def product(bufs: Array[Seq[T]]): Iterator[Array[T]] = {
+    if (bufs(right).size == 0) {
+      Seq[Array[T]]().iterator
+    } else if (bufs(left).size == 0) {
+      productBin(SINGLE_NULL_LIST, bufs(right))
+    } else {
+      productBin(bufs(left), bufs(right))
+    }
+  }
+}
+
+class BinaryLeftSemiJoin[T >: Null : ClassManifest](joinCondition: JoinCondDesc, numTables: Int) extends CartesianProduct[T](numTables) {
+  val left = joinCondition.getLeft
+  val right = joinCondition.getRight
+
+  def product(bufs: Array[Seq[T]]): Iterator[Array[T]] = {
+    // For semi join, we only need one element from the table on the right
+    // to verify an row exists.
+    if (bufs(left).size == 0 || bufs(right).size == 0) {
+      Seq[Array[T]]().iterator
+    } else {
+      productBin(bufs(left), SINGLE_NULL_LIST)
     }
   }
 }
